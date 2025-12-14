@@ -1,0 +1,97 @@
+I (4807) eth_debug: Ethernet started
+I (9807) eth_debug: Link status: DOWN, heap=547432
+I (9807) eth_debug: PHY: BMCR=0x3100 BMSR=0x7849 (prev=0x7849) link=0 aneg_en=1 aneg_done=0
+I (9807) eth_debug: PHY: ID1=0x0243 ID2=0x0c54 ANAR=0x01e1 ANLPAR=0x0000
+I (9807) eth_debug: PHY reg 00 = 0x3100
+I (9817) eth_debug: PHY reg 01 = 0x7849
+I (9817) eth_debug: PHY reg 02 = 0x0243
+I (9817) eth_debug: PHY reg 03 = 0x0c54
+I (9827) eth_debug: PHY reg 04 = 0x01e1
+I (9827) eth_debug: PHY reg 05 = 0x0000
+I (9827) eth_debug: PHY reg 06 = 0x0006
+I (14837) eth_debug: Link status: DOWN, heap=547444
+I (14837) eth_debug: PHY: BMCR=0x3100 BMSR=0x7849 (prev=0x7849) link=0 aneg_en=1 aneg_done=0
+I (14837) eth_debug: PHY: ID1=0x0243 ID2=0x0c54 ANAR=0x01e1 ANLPAR=0x0000
+I (14837) eth_debug: PHY reg 00 = 0x3100
+I (14847) eth_debug: PHY reg 01 = 0x7849
+I (14847) eth_debug: PHY reg 02 = 0x0243
+I (14847) eth_debug: PHY reg 03 = 0x0c54
+I (14857) eth_debug: PHY reg 04 = 0x01e1
+I (14857) eth_debug: PHY reg 05 = 0x0000
+I (14867) eth_debug: PHY reg 06 = 0x000f
+I (19867) eth_debug: Link status: DOWN, heap=547444
+I (19867) eth_debug: PHY: BMCR=0x3100 BMSR=0x7849 (prev=0x7849) link=0 aneg_en=1 aneg_done=0
+I (19867) eth_debug: PHY: ID1=0x0243 ID2=0x0c54 ANAR=0x01e1 ANLPAR=0x0000
+I (19867) eth_debug: PHY reg 00 = 0x3100
+I (19877) eth_debug: PHY reg 01 = 0x7849
+I (19877) eth_debug: PHY reg 02 = 0x0243
+I (19877) eth_debug: PHY reg 03 = 0x0c54
+I (19887) eth_debug: PHY reg 04 = 0x01e1
+I (19887) eth_debug: PHY reg 05 = 0x0000
+I (19897) eth_debug: PHY reg 06 = 0x000f
+W (19897) eth_debug: No link after 15s -> switching to forced 10M/HALF (autoneg OFF) for diagnostics
+E (19907) esp.emac: emac_esp32_rm_mac_filter(199): failed to remove MAC filter
+E (19907) esp_eth: esp_eth_ioctl(540): remove mac address from filter failed
+E (19917) esp_eth.netif.netif_glue: eth_set_mac_filter(58): failed to delete mac filter
+E (19927) esp_netif_lwip: Failed to remove multicast filter for IPv4
+W (19937) eth_debug: Ethernet stopped
+I (19937) eth_debug: Ethernet started
+I (21907) eth_debug: Ethernet link up
+I (21907) eth_debug: Link: 10M HALF
+I (21907) eth_debug: DHCP: already started
+I (21907) eth_debug: DHCP: status=STARTED
+I (21907) eth_debug: IP (on link-up): ip=0.0.0.0 netmask=0.0.0.0 gw=0.0.0.0
+I (21917) eth_debug: MAC: E8:F6:0A:E0:71:62
+I (24907) eth_debug: Link status: UP, heap=547196
+I (24907) eth_debug: IP: ip=0.0.0.0 netmask=0.0.0.0 gw=0.0.0.0
+I (24907) eth_debug: DHCP: already started
+I (24907) eth_debug: DHCP: status=STARTED
+I (29907) eth_debug: Link status: UP, heap=547196
+I (29907) eth_debug: IP: ip=0.0.0.0 netmask=0.0.0.0 gw=0.0.0.0
+W (29907) eth_debug: No IP after ~10s with link UP -> restarting DHCP client
+I (29907) eth_debug: DHCP: start requested
+I (29907) eth_debug: DHCP: status=STARTED
+I (34917) eth_debug: Link status: UP, heap=547196
+I (34917) eth_debug: IP: ip=0.0.0.0 netmask=0.0.0.0 gw=0.0.0.0
+W (34917) eth_debug: Still no IP with link UP -> trying forced 10M/FULL (autoneg OFF) and restarting DHCP
+W (34917) eth_debug: Ethernet link down
+E (34927) esp.emac: emac_esp32_rm_mac_filter(199): failed to remove MAC filter
+E (34927) esp_eth: esp_eth_ioctl(540): remove mac address from filter failed
+E (34937) esp_eth.netif.netif_glue: eth_set_mac_filter(58): failed to delete mac filter
+E (34947) esp_netif_lwip: Failed to remove multicast filter for IPv4
+W (34947) eth_debug: Ethernet stopped
+I (34957) eth_debug: Ethernet started
+I (34957) eth_debug: Ethernet link up
+I (34957) eth_debug: Link: 10M FULL
+I (34967) eth_debug: DHCP: already started
+I (34967) eth_debug: DHCP: status=STARTED
+I (34977) eth_debug: IP (on link-up): ip=0.0.0.0 netmask=0.0.0.0 gw=0.0.0.0
+I (34977) eth_debug: MAC: E8:F6:0A:E0:71:62
+I (34987) eth_debug: DHCP: start requested
+I (34987) eth_debug: DHCP: status=STARTED
+I (39987) eth_debug: Link status: UP, heap=547196
+I (39987) eth_debug: IP: ip=0.0.0.0 netmask=0.0.0.0 gw=0.0.0.0
+E (39987) eth_debug: Link is UP but still no IP. Either there is no DHCP server on this port, or traffic is not passing (wiring/magnetics/duplex issue).
+W (39997) eth_debug: No DHCP lease after ~20s -> applying static IP fallback to continue verification
+I (40007) esp_netif_handlers: eth ip: 192.168.16.222, mask: 255.255.255.0, gw: 192.168.16.1
+I (40007) eth_debug: Got IP: 192.168.16.222
+I (40017) eth_debug: Netmask: 255.255.255.0, Gateway: 192.168.16.1
+I (40017) eth_debug: HTTP test: downloading http://ash-speed.hetzner.com/100MB.bin
+W (40017) eth_debug: Static IP fallback applied (edit ETH_STATIC_FALLBACK_* macros if needed)
+I (40037) eth_debug: IP (static): ip=192.168.16.222 netmask=255.255.255.0 gw=192.168.16.1
+I (40047) eth_debug: DNS: main=192.168.16.1
+I (40047) eth_debug: DNS: backup=1.1.1.1
+I (40057) eth_debug: ARP: probing gateway (192.168.16.1) on en
+W (40257) eth_debug: ARP: gateway not resolved (wrong GW/DNS IP, or no TX/RX packets)
+I (45257) eth_debug: Link status: UP, heap=532588
+I (45257) eth_debug: IP: ip=192.168.16.222 netmask=255.255.255.0 gw=192.168.16.1
+I (50257) eth_debug: Link status: UP, heap=532588
+I (50257) eth_debug: IP: ip=192.168.16.222 netmask=255.255.255.0 gw=192.168.16.1
+E (54027) esp-tls: couldn't get hostname for :ash-speed.hetzner.com: getaddrinfo() returns 202, addrinfo=0x0
+E (54027) transport_base: Failed to open a new connection: 32769
+E (54027) HTTP_CLIENT: Connection failed, sock < 0
+E (54027) eth_debug: HTTP test: open failed: ESP_ERR_HTTP_CONNECT
+I (55257) eth_debug: Link status: UP, heap=547300
+I (55257) eth_debug: IP: ip=192.168.16.222 netmask=255.255.255.0 gw=192.168.16.1
+I (60257) eth_debug: Link status: UP, heap=547300
+I (60257) eth_debug: IP: ip=192.168.16.222 netmask=255.255.255.0 gw=192.168.16.1
