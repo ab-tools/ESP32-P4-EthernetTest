@@ -28,7 +28,7 @@ static volatile bool s_http_test_started = false;
 static volatile bool s_got_ip_once = false;
 
 #define HTTP_TEST_URL "http://ash-speed.hetzner.com/100MB.bin"
-#define HTTP_TEST_RX_BUF_SIZE 4096
+#define HTTP_TEST_RX_BUF_SIZE 16384
 
 // The 100M probe restarts the Ethernet driver and can disrupt DHCP/HTTP tests.
 // Keep it OFF by default; enable only when you are explicitly diagnosing 100M.
