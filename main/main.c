@@ -13,8 +13,10 @@
 
 #include "lwip/etharp.h"
 #include "lwip/ip4_addr.h"
+#include "lwip/netdb.h"
 #include "lwip/netif.h"
 #include "lwip/prot/ethernet.h"
+#include "lwip/sockets.h"
 
 #include <inttypes.h>
 
@@ -28,7 +30,15 @@ static volatile bool s_http_test_started = false;
 static volatile bool s_got_ip_once = false;
 
 #define HTTP_TEST_URL "http://ash-speed.hetzner.com/100MB.bin"
-#define HTTP_TEST_RX_BUF_SIZE 16384
+// Larger buffer helps keep TCP receive window open and reduces per-read overhead.
+// Keep in internal RAM for best throughput.
+#define HTTP_TEST_RX_BUF_SIZE (64 * 1024)
+#define HTTP_TEST_REPORT_INTERVAL_MS 1000
+
+// Parsed from HTTP_TEST_URL (kept explicit to avoid pulling in a URL parser)
+#define HTTP_TEST_HOST "ash-speed.hetzner.com"
+#define HTTP_TEST_PATH "/100MB.bin"
+#define HTTP_TEST_PORT 80
 
 // The 100M probe restarts the Ethernet driver and can disrupt DHCP/HTTP tests.
 // Keep it OFF by default; enable only when you are explicitly diagnosing 100M.
@@ -69,6 +79,8 @@ static volatile eth_duplex_t s_last_link_duplex = ETH_DUPLEX_HALF;
 
 void http_download_task(void *param);
 static void start_http_test_once(void);
+
+static void http_speed_test_raw_socket(void);
 
 typedef struct {
     bool active;
@@ -366,7 +378,8 @@ static void start_http_test_once(void)
         return;
     }
     s_http_test_started = true;
-    BaseType_t ok = xTaskCreate(http_download_task, "http_test", 8192, NULL, 5, NULL);
+    // Give the download task a higher priority so it can drain the TCP recv mailbox fast.
+    BaseType_t ok = xTaskCreate(http_download_task, "http_test", 8192, NULL, 12, NULL);
     if (ok != pdPASS) {
         ESP_LOGE(TAG, "Failed to create http_test task");
     }
@@ -381,81 +394,191 @@ void http_download_task(void *param)
 {
     (void)param;
 
+    http_speed_test_raw_socket();
+    vTaskDelete(NULL);
+}
+
+static void http_speed_test_raw_socket(void)
+{
     ESP_LOGI(TAG, "HTTP test: downloading %s", HTTP_TEST_URL);
 
-    esp_http_client_config_t config = {
-        .url = HTTP_TEST_URL,
-        .timeout_ms = 15000,
-        .buffer_size = HTTP_TEST_RX_BUF_SIZE,
-        .keep_alive_enable = true,
-    };
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
 
-    esp_http_client_handle_t client = esp_http_client_init(&config);
-    if (!client) {
-        ESP_LOGE(TAG, "HTTP test: esp_http_client_init failed");
-        vTaskDelete(NULL);
+    char port_str[8];
+    snprintf(port_str, sizeof(port_str), "%d", HTTP_TEST_PORT);
+
+    struct addrinfo *res = NULL;
+    const int gai = getaddrinfo(HTTP_TEST_HOST, port_str, &hints, &res);
+    if (gai != 0 || res == NULL) {
+        ESP_LOGE(TAG, "HTTP test: DNS failed for %s: %d", HTTP_TEST_HOST, gai);
         return;
     }
 
-    esp_err_t err = esp_http_client_open(client, 0);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "HTTP test: open failed: %s", esp_err_to_name(err));
-        esp_http_client_cleanup(client);
-        vTaskDelete(NULL);
+    int sock = -1;
+    for (struct addrinfo *ai = res; ai != NULL; ai = ai->ai_next) {
+        sock = (int)socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (sock < 0) {
+            continue;
+        }
+        if (connect(sock, ai->ai_addr, (socklen_t)ai->ai_addrlen) == 0) {
+            break;
+        }
+        close(sock);
+        sock = -1;
+    }
+    freeaddrinfo(res);
+    res = NULL;
+
+    if (sock < 0) {
+        ESP_LOGE(TAG, "HTTP test: connect failed");
         return;
     }
 
-    int64_t content_length = esp_http_client_fetch_headers(client);
-    int status = esp_http_client_get_status_code(client);
-    ESP_LOGI(TAG, "HTTP test: status=%d, content_length=%lld", status, (long long)content_length);
-    if (status != 200) {
-        ESP_LOGE(TAG, "HTTP test: unexpected HTTP status %d", status);
+    // Best-effort: allow lwIP to buffer more incoming data per socket.
+    // (May be clamped internally depending on lwIP configuration.)
+    {
+        const int rcvbuf = 256 * 1024;
+        (void)setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
     }
 
-    uint8_t *buf = (uint8_t *)heap_caps_malloc(HTTP_TEST_RX_BUF_SIZE, MALLOC_CAP_DEFAULT);
+    struct timeval tv;
+    tv.tv_sec = 15;
+    tv.tv_usec = 0;
+    (void)setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    char req[256];
+    const int req_len = snprintf(req, sizeof(req),
+                                 "GET %s HTTP/1.1\r\n"
+                                 "Host: %s\r\n"
+                                 "User-Agent: esp32p4-eth-speedtest\r\n"
+                                 "Connection: close\r\n\r\n",
+                                 HTTP_TEST_PATH, HTTP_TEST_HOST);
+    if (req_len <= 0 || req_len >= (int)sizeof(req)) {
+        ESP_LOGE(TAG, "HTTP test: request build failed");
+        close(sock);
+        return;
+    }
+
+    int sent = 0;
+    while (sent < req_len) {
+        const int w = (int)send(sock, req + sent, req_len - sent, 0);
+        if (w <= 0) {
+            ESP_LOGE(TAG, "HTTP test: send failed");
+            close(sock);
+            return;
+        }
+        sent += w;
+    }
+
+    uint8_t *buf = (uint8_t *)heap_caps_malloc(HTTP_TEST_RX_BUF_SIZE, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!buf) {
         ESP_LOGE(TAG, "HTTP test: failed to alloc rx buffer");
-        esp_http_client_close(client);
-        esp_http_client_cleanup(client);
-        vTaskDelete(NULL);
+        close(sock);
         return;
     }
+
+    char header_buf[2048];
+    size_t header_len = 0;
+    bool header_done = false;
+    int64_t content_length = -1;
 
     const int64_t start_us = esp_timer_get_time();
     int64_t last_report_us = start_us;
+    int64_t last_report_total = 0;
     int64_t total = 0;
+
     while (true) {
-        int r = esp_http_client_read(client, (char *)buf, HTTP_TEST_RX_BUF_SIZE);
+        const int r = (int)recv(sock, (char *)buf, HTTP_TEST_RX_BUF_SIZE, 0);
         if (r < 0) {
-            ESP_LOGE(TAG, "HTTP test: read error");
+            ESP_LOGE(TAG, "HTTP test: recv error");
             break;
         }
         if (r == 0) {
-            // EOF
             break;
         }
-        total += r;
+
+        int payload_start = 0;
+        if (!header_done) {
+            const size_t copy_n = (header_len < sizeof(header_buf) - 1)
+                                      ? (size_t)((r < (int)(sizeof(header_buf) - 1 - header_len)) ? r : (int)(sizeof(header_buf) - 1 - header_len))
+                                      : 0;
+            if (copy_n > 0) {
+                memcpy(header_buf + header_len, buf, copy_n);
+                header_len += copy_n;
+                header_buf[header_len] = '\0';
+
+                char *end = strstr(header_buf, "\r\n\r\n");
+                if (end) {
+                    header_done = true;
+                    payload_start = (int)((end + 4) - header_buf);
+
+                    char *cl = strcasestr(header_buf, "\r\nContent-Length:");
+                    if (cl) {
+                        cl += 2; // skip leading CRLF
+                        cl = strchr(cl, ':');
+                        if (cl) {
+                            cl++;
+                            while (*cl == ' ') cl++;
+                            content_length = atoll(cl);
+                        }
+                    }
+
+                    // The payload bytes we already have in header_buf are part of this recv.
+                    const int header_consumed_from_this_recv = (int)copy_n - payload_start;
+                    if (header_consumed_from_this_recv < 0) {
+                        // Header end not fully contained in the copied part.
+                        payload_start = 0;
+                    } else {
+                        // For this recv, the payload starts at payload_start within header_buf, which corresponds to
+                        // the same offset in buf (since we copied from the beginning).
+                    }
+
+                    ESP_LOGI(TAG, "HTTP test: header received (content_length=%lld)", (long long)content_length);
+                }
+            }
+        }
+
+        if (header_done) {
+            // If header end was within the copied portion, payload starts at that offset for this recv.
+            // Otherwise, payload is the whole recv buffer.
+            int body_offset = 0;
+            if (payload_start > 0 && payload_start <= r) {
+                body_offset = payload_start;
+            }
+            total += (r - body_offset);
+        }
 
         const int64_t now_us = esp_timer_get_time();
-        if (now_us - last_report_us >= 1000000) {
-            double elapsed_s = (now_us - start_us) / 1000000.0;
-            double mb = total / (1024.0 * 1024.0);
-            double mbps = (total * 8.0) / (elapsed_s * 1000.0 * 1000.0);
-            ESP_LOGI(TAG, "HTTP test: received %.2f MiB in %.1fs (avg %.2f Mbps)", mb, elapsed_s, mbps);
+        if (now_us - last_report_us >= (int64_t)HTTP_TEST_REPORT_INTERVAL_MS * 1000) {
+            const double elapsed_s = (now_us - start_us) / 1000000.0;
+            const double mb = total / (1024.0 * 1024.0);
+            const double avg_mbps = (total * 8.0) / (elapsed_s * 1000.0 * 1000.0);
+
+            const int64_t delta_bytes = total - last_report_total;
+            const double delta_s = (now_us - last_report_us) / 1000000.0;
+            const double inst_mbps = (delta_s > 0) ? (delta_bytes * 8.0) / (delta_s * 1000.0 * 1000.0) : 0.0;
+
+            ESP_LOGI(TAG, "HTTP test: received %.2f MiB in %.1fs (inst %.2f Mbps, avg %.2f Mbps)", mb, elapsed_s, inst_mbps, avg_mbps);
             last_report_us = now_us;
+            last_report_total = total;
+        }
+
+        if (content_length > 0 && total >= content_length) {
+            break;
         }
     }
 
     const int64_t end_us = esp_timer_get_time();
-    double elapsed_s = (end_us - start_us) / 1000000.0;
-    double mb = total / (1024.0 * 1024.0);
-    double mbps = (total * 8.0) / (elapsed_s * 1000.0 * 1000.0);
+    const double elapsed_s = (end_us - start_us) / 1000000.0;
+    const double mb = total / (1024.0 * 1024.0);
+    const double mbps = (total * 8.0) / (elapsed_s * 1000.0 * 1000.0);
     ESP_LOGI(TAG, "HTTP test: DONE %.2f MiB in %.2fs (avg %.2f Mbps)", mb, elapsed_s, mbps);
 
     heap_caps_free(buf);
-    esp_http_client_close(client);
-    esp_http_client_cleanup(client);
-    vTaskDelete(NULL);
+    close(sock);
 }
 
 static void on_eth_event(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
@@ -519,7 +642,9 @@ void app_main(void) {
     esp_log_level_set("esp_eth", ESP_LOG_INFO);
     esp_log_level_set("esp_netif", ESP_LOG_INFO);
     esp_log_level_set("esp_netif_lwip", ESP_LOG_INFO);
-    esp_log_level_set("esp_http_client", ESP_LOG_INFO);
+    // Reduce per-chunk logging overhead in the hot download loop.
+    esp_log_level_set("esp_http_client", ESP_LOG_WARN);
+    esp_log_level_set("transport_base", ESP_LOG_WARN);
     esp_log_level_set("esp_event", ESP_LOG_WARN);
 
     ESP_ERROR_CHECK(esp_netif_init());
